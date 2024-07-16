@@ -2,6 +2,7 @@
 import socket
 import select
 import time
+import system
 
 #cores
 def RED(msg: str) -> str: 
@@ -17,12 +18,12 @@ def BLUE(msg: str) -> str:
     return f'\033[36m{msg}\033[m'
 
 def options():
-    print("Para listar usuarios ativos: /list")
-    print("Para iniciar uma conversa digite: /chat <nome_de_usuário>")      
-    print("Para conversa digite: /msg <mensagem>")        
-    print("Para mudar de conversa digite: /talk <nome_de_usuário>")        
-    print("Para encerrar conversa digite: /bye <nome_de_usuário>")        
-    print("Para ficar desonline digite: /fim")
+    print(BLUE("___MENU___"))
+    print("Inbox: /list")
+    print("Entrar em um chat: /chat <nome_de_usuário>")      
+    print("Enviar mensagem: /msg <mensagem>")             
+    print("Encerrar chat: /bye <nome_de_usuário>")        
+    print("Desonline: /fim")
 
 HOST = '200.235.131.66'          #Endereco IP do servidor
 PORT = 5000                 #Porta que o servidor esta
@@ -40,12 +41,14 @@ chat = {}
 current = ''
 
 while msg != '/fim':
-    inbox, _ , _ = select.select(list([x['sockets'] for x in chats.values()]),[],[],0.1)
-
     #A A A Staying alive, staying alive
     if time.time() - t > 5.00:
         t = time.time()
         tcp.send('KEEP\r\n'.encode())
+        
+    msg = input()
+    
+    inbox, _ , _ = select.select(list([x['sockets'] for x in chats.values()]),[],[],0.1)
 
     unread = 0
     for peer in inbox:
@@ -60,15 +63,14 @@ while msg != '/fim':
         except Exception as ex:
             print(RED("<<Alert!>>"))
             print(ex)
-        
-    msg = input()
-    if msg == "/fim":
+
+    if msg[:4] == "/fim":
         if len(friends)==0:
             break
         #verifica papos
         #desonline
 
-    elif msg == "/list":
+    elif msg[:5] == "/list":
         tcp.send('LIST\r\n'.encode())
         print(BLUE('___INBOX___'))
         try:
@@ -78,34 +80,46 @@ while msg != '/fim':
                     print(GREEN(friend,'    ', [friend]['new']))
                 else:
                     print(friend)
-
+            print(YELLOW("<- Visualizar MENU: /menu"))
         except Exception as ex:
             print(RED("<<Alert!>>"))
             print(ex)
 
     elif msg[:5] == "/chat":
-        tcp.send(f'ADDR {msg[6:]}\r\n'.encode())
-        resp = tcp.recv(1024).decode()
-
-        try:
-            chat[msg[6:]]["socket"] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            chat[msg[6:]]["socket"].connect(resp.split(':')[0][5:],resp.split(':')[1])
-            chat[msg[6:]]['backup'] = {}
-            chat[msg[6:]]['new'] = 0
+        #chat ja foi iniciado
+        if chat.get(msg[6:]):
             current = msg[6:]
+            system('cls')
             print(GREEN('<Chat com ', msg[6:],'>'))
-        except Exception as ex:
-            print(RED("<<Alert!>>"))
-            print(ex)
+            for pos,text in enumerate(chat[msg[6:]]['backup']):
+                if pos == len(chat[msg[6:]]['backup'])-chat[msg[6:]]['new']-1:
+                    print(GREEN('-----Novas mensagens------'))
+                print(text)
+            chat[msg[6:]]['new'] = 0
+        #nao ha chat
+        else:
+            tcp.send(f'ADDR {msg[6:]}\r\n'.encode())
+            resp = tcp.recv(1024).decode()
+            try:
+                chat[msg[6:]]["socket"] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                chat[msg[6:]]["socket"].connect(resp.split(':')[0][5:],resp.split(':')[1])
+                chat[msg[6:]]['backup'] = {}
+                chat[msg[6:]]['new'] = 0
+                current = msg[6:]
+                print(GREEN('<Chat com ', msg[6:],' >'))
+            except Exception as ex:
+                print(RED("<<Alert!>>"))
+                print(ex)
 
-    elif msg == "/talk":
+    elif msg[:4] == "/bye":
         tcp.send(msg.encode())
     
-    elif msg == "/bye":
+    elif msg[:4] == "/msg":
         tcp.send(msg.encode())
-    
-    elif msg == "/msg":
-        tcp.send(msg.encode())
+
+    elif msg[:5] == "/menu":
+        system('cls')
+        options()
 
     else:
         print(YELLOW('Nao entendi. Poderia repetir?'))
