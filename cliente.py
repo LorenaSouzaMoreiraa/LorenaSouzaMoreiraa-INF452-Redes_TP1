@@ -2,6 +2,7 @@
 import socket
 import select
 import time
+import threading
 import os
 
 #cores
@@ -22,6 +23,12 @@ def clear():
         os.system('cls') or None
     else:
         os.system('clear') or None 
+
+def alive():
+    #A A A Staying alive, staying alive
+    if time.time() - t > 5.00:
+        t = time.time()
+        tcp.send('KEEP\r\n'.encode())
 
 def options():
     print(BLUE("___MENU___"))
@@ -48,24 +55,22 @@ current = ''
 unread = 0
 
 while msg != '/exit':
-    #A A A Staying alive, staying alive
-    if time.time() - t > 5.00:
-        t = time.time()
-        tcp.send('KEEP\r\n'.encode())
-        
+    t = threading.Thread(target=alive, args=())
+    t.start()
+
+    msg  = ''
     msg = input()
     
     if len(chat)>0:
         inbox, _ , _ = select.select(list([x['socket'] for x in chat.values()]),[],[],0.5)
 
-        unread = 0
         for peer in inbox:
             text = peer.recv(1024)
             try:
                 if peer == chat[current]['socket']:
                     print(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: ',text.decode())
                 else:
-                    chat[current]['new'] +=1
+                    chat[current]['new'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
                     unread +=1
                 
                 chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
@@ -74,10 +79,10 @@ while msg != '/exit':
                 print(ex)
 
     if msg[:4] == "/exit":
-        if len(friend)==0:
-            exit()
-        #verifica papos
-        #desonline
+        if len(friend) > 0:
+            for friend in chat.values():
+                chat[friend]["socket"].send(f'DISC\r\n'.encode())
+        exit()
 
     elif msg[:5] == "/list":
         clear()
@@ -122,7 +127,7 @@ while msg != '/exit':
                 chat[name]["socket"].connect((resp.split(':')[0][5:],int(resp.split(':')[1])))
                 chat[name]["socket"].send('USER lolo\r\n'.encode())
                 chat[name]['backup'] = []
-                chat[name]['new'] = 0
+                chat[name]['new'] = {}
                 current = name
                 clear()
                 print(YELLOW("<- Visualizar MENU: /menu"))
@@ -134,6 +139,7 @@ while msg != '/exit':
 
     elif msg[:4] == "/bye":
         chat[current]["socket"].send(f'DISC\r\n'.encode())
+        chat.pop(current)
         current = ''
         clear()
         options()
@@ -149,5 +155,5 @@ while msg != '/exit':
 
     else:
         print(YELLOW('Nao entendi. Poderia repetir?'))
-    msg  = ''
+    
 tcp.close() 
