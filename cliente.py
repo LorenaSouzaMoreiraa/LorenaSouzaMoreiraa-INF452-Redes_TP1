@@ -20,10 +20,10 @@ def BLUE(msg: str) -> str:
 def options():
     print(BLUE("___MENU___"))
     print("Inbox: /list")
-    print("Entrar em um chat: /chat <nome_de_usuário>")      
-    print("Enviar mensagem: /msg <mensagem>")             
-    print("Encerrar chat: /bye <nome_de_usuário>")        
-    print("Desonline: /fim")
+    print("Entrar em um chat:/chat <nome_de_usuário>")      
+    print("Enviar mensagem:/msg <mensagem>")             
+    print("Encerrar chat:/bye")        
+    print("Desonline:/fim")
 
 HOST = '200.235.131.66'          #Endereco IP do servidor
 PORT = 5000                 #Porta que o servidor esta
@@ -59,7 +59,7 @@ while msg != '/fim':
             else:
                 chat[current]['new'] +=1
                
-            chat[current]['backup'].append(f'[{time:time()}]: ',text.decode() )
+            chat[current]['backup'].append(f'[{time:time()}]',current,': ',text.decode() )
         except Exception as ex:
             print(RED("<<Alert!>>"))
             print(ex)
@@ -90,7 +90,9 @@ while msg != '/fim':
         if chat.get(msg[6:]):
             current = msg[6:]
             system('cls')
+            print(YELLOW("<- Visualizar MENU: /menu"))
             print(GREEN('<Chat com ', msg[6:],'>'))
+            print(YELLOW("<- Visualizar INBOX: /list"))
             for pos,text in enumerate(chat[msg[6:]]['backup']):
                 if pos == len(chat[msg[6:]]['backup'])-chat[msg[6:]]['new']-1:
                     print(GREEN('-----Novas mensagens------'))
@@ -106,18 +108,25 @@ while msg != '/fim':
                 chat[msg[6:]]['backup'] = {}
                 chat[msg[6:]]['new'] = 0
                 current = msg[6:]
+                print(YELLOW("<- Visualizar MENU: /menu"))
                 print(GREEN('<Chat com ', msg[6:],' >'))
+                print(YELLOW("<- Visualizar INBOX: /menu"))
             except Exception as ex:
                 print(RED("<<Alert!>>"))
                 print(ex)
 
     elif msg[:4] == "/bye":
-        tcp.send(msg.encode())
+        current = ''
+        tcp.send(f'DISC\r\n'.encode())
+        system('cls')
+        options()
     
     elif msg[:4] == "/msg":
-        tcp.send(msg.encode())
+        tcp.send(msg[:5].encode())
+        chat[msg[:5]]['backup'].append(f'[{time:time()}]: ',text.decode())
 
     elif msg[:5] == "/menu":
+        current = ''
         system('cls')
         options()
 
