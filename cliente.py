@@ -26,22 +26,33 @@ def clear():
 
 def alive(start):
     #A A A Staying alive, staying alive
-    if time.time() - start >= 5.00:
-        t = time.time()
-        tcp.send('KEEP\r\n'.encode())
+    while True:
+        if time.time() - start >= 5.00:
+            start = time.time()
+            tcp.send('KEEP\r\n'.encode())
 
 def options():
     print(BLUE("___MENU___"))
-    print("Inbox:/list")
+    print("Inbox:/inbox")
     print("Entrar em um chat:/chat <nome_de_usuário>")      
     print("Enviar mensagem:/msg <mensagem>")             
     print("Encerrar chat:/bye")        
     print("Desonline:/exit")
 
-HOST = '200.235.131.66'          #Endereco IP do servidor
-PORT = 10000                 #Porta que o servidor esta
+HOSTC = '200.235.131.66'          #Endereco IP do servidor
+PORTC = 10000                 #Porta que o servidor esta
+
+HOST = '127.0.0.1'          #Endereco IP do servidor
+PORT = 18204                 #Porta que o servidor esta
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SQL_SOCKET, socket.SO_REUSEADDR, 1)
+orig = (HOST,PORT)
+server.bind(orig)
+server.listen(1)
+
 tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-dest = (HOST,PORT)
+dest = (HOSTC,PORTC)
 tcp.connect(dest)
 
 tcp.send('USER lolo:18204\r\n'.encode())
@@ -53,31 +64,15 @@ current = ''
 unread = 0
 
 aux = time.time()
+t = threading.Thread(target=alive, args=({aux}))
+t.daemon = True
+t.start()
 
 while msg != '/exit':
-    t = threading.Thread(target=alive, args=({aux}))
-    t.start()
-
     msg  = ''
     msg = input()
-    
-    if len(chat)>0:
-        inbox, _ , _ = select.select(list([x['socket'] for x in chat.values()]),[],[],0.1)
 
-        for peer in inbox:
-            text = peer.recv(1024)
-            try:
-                if peer == chat[current]['socket']:
-                    print(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: ',text.decode())
-                    chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
-                else:
-                    chat[current]['new'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
-                    unread +=1
-            except Exception as ex:
-                print(RED("<<Alert!>>"))
-                print(ex)
-
-    if msg[:5] == "/list":
+    if msg[:6] == "/inbox":
         clear()
         tcp.send('LIST\r\n'.encode())
         print(BLUE('___INBOX___'))
@@ -85,7 +80,7 @@ while msg != '/exit':
         try:
             resp = tcp.recv(1024).decode()
             for friend in resp[5:].split(':'):
-                if friend in chat and chat[friend]['new']> 0:
+                if friend in chat and len(chat[friend]['new'])> 0:
                     value = chat[friend]['new']
                     print(BLUE(f'{friend}    {value}'))
                 else:
@@ -101,12 +96,13 @@ while msg != '/exit':
             current = msg[6:]
             clear()
             print(YELLOW("<- Visualizar MENU: /menu"))
+            print(YELLOW("<- Visualizar INBOX: /inbox"))
             print(GREEN(f'<Chat com {msg[6:]}>'))
-            print(YELLOW("<- Visualizar INBOX: /list"))
             for text in chat[msg[6:]]['backup']:
                 print(text)
-                
-            print(BLUE('-----Novas mensagens------'))
+            
+            if len(chat[msg[6:]]['new'])>0:
+                print(BLUE('-----Novas mensagens------'))
             for text in chat[msg[6:]]['new']:
                 print(text)
                 chat[msg[6:]]['backup'].append(text)
@@ -130,8 +126,7 @@ while msg != '/exit':
                 print(GREEN(f'<Chat com {name} >'))
                 print(YELLOW("<- Visualizar INBOX: /menu"))
             except Exception as ex:
-                print(RED("<<Alert!>>"))
-                print(ex)
+                print(RED("<<Informações incorretas!Tente novamente.>>"))
 
     elif msg[:4] == "/bye":
         chat[current]["socket"].send(f'DISC\r\n'.encode())
@@ -141,7 +136,7 @@ while msg != '/exit':
         options()
     
     elif msg[:4] == "/msg":
-        chat[current]["socket"].send(f'{msg[:5]}\r\n'.encode())
+        chat[current]["socket"].send(f'{msg[5:]}\r\n'.encode())
         chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]: {msg[5:]}')
 
     elif msg[:5] == "/menu":
@@ -152,10 +147,34 @@ while msg != '/exit':
     elif msg[:5] == "/exit":
         if len(chat) > 0:
             for friend in chat.values():
-                chat[friend]["socket"].send(f'DISC\r\n'.encode())
+                try:
+                    friend["socket"].send(f'DISC\r\n'.encode())
+                except Exception as ex:
+                    continue
         break  
 
-    elif msg[1:] != '\n':
+    elif msg[2:] != '\n':
         print(YELLOW('Nao entendi. Poderia repetir?'))
     
+    if len(chat)>0:
+        inbox, _ , _ = select.select(list([x['socket'] for x in chat.values()]),[],[],0.5)
+
+        for peer in inbox:
+            text = peer.recv(1024)
+            if len(text)>0:
+                try:
+                    if peer == chat[current]['socket']:
+                        print(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: ',text.decode())
+                        chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
+                    else:
+                        chat[current]['new'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]'+current+': '+text.decode() )
+                        unread +=1
+                except Exception as ex:
+                    print(RED("<<Alert!>>"))
+                    print(ex)
+
+    
+    inbox, _ , _ = select.select(list([x['socket'] for x in chat.values()]),[],[],0.5)
+
+tcp.send(f'DISC\r\n'.encode())
 tcp.close() 
