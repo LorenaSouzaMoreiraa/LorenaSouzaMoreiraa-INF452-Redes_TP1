@@ -27,7 +27,7 @@ def GREEN(msg):
 def BLUE(msg):
     return f'\033[36m{msg}\033[m'
 
-# limpar terminal
+#limpar terminal
 def clear():
     if os.name == 'nt':  # Windows
         os.system('cls') or None
@@ -39,7 +39,7 @@ def cheat():
     print(BLUE("___MENU___"))
     print("Inbox: /inbox")
     print("Entrar em um chat: /chat <nome_de_usuário>")
-    print("Enviar mensagem: /msg <mensagem>")
+    print("Enviar mensagem dentro de um chat: <mensagem>")
     print("Encerrar chat: /bye")
     print("Desonline: /exit")
     print(BLUE("------------"))
@@ -89,8 +89,14 @@ def menu():
 # leitura
 def command():
     while True:
-        msg = input()
-        q.put(msg)
+        try:
+            msg = input()
+            q.put(msg)
+        except KeyboardInterrupt:
+            q.put('exit')
+        except EOFError:
+            q.put('exit')
+
 
 # server central
 HOSTC = '200.235.131.66'  # Endereco IP do servidor
@@ -122,6 +128,7 @@ tcp.send(f'USER {me}:{PORT}\r\n'.encode())
 msg = ''
 current = ''
 unread = 0
+running = True
 
 # timer conexao
 aux = time.time()
@@ -129,66 +136,81 @@ t = threading.Thread(target=alive, args=({aux}))
 t.daemon = True
 t.start()
 
+# leitura de mensagens
 q = queue.Queue()
 tin = threading.Thread(target=command, args=({}))
 tin.daemon = True
 tin.start()
 
 cheat()
-while True:
+while running:
     # busca atualizacoes
-    if len(chat) > 0:
-        try:
-            inbox, _, _ = select.select([x['socket'] for x in chat.values()], [], [], 0.5)
-        except Exception as ex:
-            print(ex)
-
-        before = unread
-        for peer in inbox:
-            if peer is server:
-                con, cliente = server.accept()
-                try:
-                    request, _, _ = select.select([con], [], [], 0.1)
-                    text = request[0].recv(1024).decode()
-                    name = text[5:].strip()
-                    chat[name] = {}
-                    chat[name]['socket'] = con
-                    chat[name]['backup'] = []
-                    chat[name]['new'] = []
-                    print(BLUE(f'[Conexao com {name} aceita]'))
-                except Exception as ex:
-                    print(ex)
-            else:
-                try:
-                    text = peer.recv(1024).decode()
-                    if text[:4] != 'DISC':
-                        if current != '' and peer is chat[current]['socket']:
-                            print(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: {text}')
-                            chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: {text}')
-                        else:
-                            name = find_key_by_socket(chat, peer)
-                            if name:
-                                chat[name]['new'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {name}: {text}')
-                                unread += 1
-                    else:
-                        name = find_key_by_socket(chat, peer)
-                        if current == name:
-                            clear()
-                            cheat()
-                            print(BLUE(f'[{name} encerrou a conversa]'))
-                            current = ''
-                        
-                        del chat[name]
-                except Exception as ex:
-                    print(RED("<<Alert!>>"))
-                    print(ex)
-        if before < unread:
-            print(BLUE(f'[{unread} mensagens nao lidas]'))
-        
     try:
+        if len(chat) > 0:
+            try:
+                inbox, _, _ = select.select([x['socket'] for x in chat.values()], [], [], 0.5)
+            except Exception as ex:
+                print(ex)
+
+            before = unread
+            for peer in inbox:
+                #aceita conexoes
+                if peer is server:
+                    con, cliente = server.accept()
+                    try:
+                        request, _, _ = select.select([con], [], [], 0.1)
+                        text = request[0].recv(1024).decode()
+                        name = text[5:].strip()
+                        chat[name] = {}
+                        chat[name]['socket'] = con
+                        chat[name]['backup'] = []
+                        chat[name]['new'] = []
+                        print(BLUE(f'[Conexao com {name} aceita]'))
+                    except Exception as ex:
+                        print(ex)
+                else:
+                    try:
+                        text = peer.recv(1024).decode().strip()
+                        #get novas mensagens
+                        if text[:4] != 'DISC':
+                            #chat atual -> exibe a mensagem
+                            if current != '' and peer is chat[current]['socket']:
+                                print(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: {text}')
+                                chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {current}: {text}')
+                            else:
+                            #outro chat -> guarda as mensagens
+                                name = find_key_by_socket(chat, peer)
+                                if name:
+                                    chat[name]['new'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}] {name}: {text}')
+                                    unread += 1
+                        else:
+                            #fecha conexao
+                            name = find_key_by_socket(chat, peer)
+                            if current == name:
+                                clear()
+                                cheat()
+                                current = ''
+                            unread -= len(chat[name]['new'])
+                            print(BLUE(f'[{name} encerrou a conversa]'))
+                            del chat[name]
+                        
+                    except Exception as ex:
+                        print(RED("<<Alert!>>"))
+                        print(ex)
+            #notifica novas msg
+            if before < unread:
+                print(BLUE(f'[{unread} mensagens nao lidas]'))
+        
+        #leitura comandos
         msg = q.get_nowait()
 
-        if msg[:6] == "/inbox":
+        #verifica se e msg em um chat
+        if current != '' and msg[:1] !='/':
+            chat[current]["socket"].send(f'{msg}\r\n'.encode())
+            chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]: {msg}')
+
+        #lista usaurios ativos
+        elif msg[:6] == "/inbox":
             clear()
             tcp.send('LIST\r\n'.encode())
             print(BLUE('___INBOX___'))
@@ -197,6 +219,7 @@ while True:
                 resp = tcp.recv(1024).decode()
                 for friend in resp[5:].split(':'):
                     friend = friend.strip()
+                    #verifica se ha novas msg daquele usuario
                     if friend in chat and len(chat[friend]['new']) > 0:
                         value = len(chat[friend]['new'])
                         print(BLUE(f'{friend}___{value}'))
@@ -209,7 +232,7 @@ while True:
 
         elif msg[:5] == "/chat":
             name = msg[6:]
-            # chat ja foi iniciado
+            # chat comigo mesmo
             if (name == me):
                 print(BLUE(f'Nao e possivel abrir um chat consigo.'))
             # chat ja foi iniciado
@@ -255,29 +278,26 @@ while True:
                     print(GREEN(f'<Chat com {name} >'))
                     print(YELLOW("<- Visualizar INBOX: /menu"))
                 except Exception as ex:
-                    print(YELLOW("<<Informações incorretas! Tente novamente.>>"))
-                    print(ex)
-                    print(address, port)
-            
+                    print(YELLOW("<<Informações incorretas! Tente novamente.>>"))   
 
         elif msg[:4] == "/bye":
+            #fecha chat atual
+            #todas as conversas sao excluidas
             chat[current]["socket"].send(f'DISC\r\n'.encode())
             chat.pop(current)
             current = ''
             clear()
             cheat()
-            print(BLUE(f'[COnversa com {name} encerrada]'))
-
-        elif msg[:4] == "/msg":
-            chat[current]["socket"].send(f'{msg[5:]}\r\n'.encode())
-            chat[current]['backup'].append(f'[{time.strftime("%d/%m/%Y %H:%M:%S", time.localtime())}]: {msg[5:]}')
+            print(BLUE(f'[Conversa com {name} encerrada]'))
 
         elif msg[:5] == "/menu":
+            #menu de comandos
             current = ''
             clear()
-            options()
+            cheat()
 
         elif msg[:5] == "/exit":
+            #fecha programa
             if len(chat) > 0:
                 for friend in chat.values():
                     try:
@@ -285,12 +305,22 @@ while True:
                     except Exception as ex:
                         continue
             break
-
+        
         elif len(msg) > 0:
             print(YELLOW('Nao entendi. Poderia repetir?'))
     
+    except KeyboardInterrupt:
+        print("\nInterrupção do teclado detectada. Encerrando o programa ...")
+        if len(chat) > 0:
+            for friend in chat.values():
+                try:
+                    friend["socket"].send(f'DISC\r\n'.encode())
+                except Exception as ex:
+                    continue
+        break
     except Exception as ex:
         continue
 
+print("Encerrando...")
 tcp.send(f'DISC\r\n'.encode())
 tcp.close()
